@@ -161,12 +161,12 @@ build_driver_uberjar() {
 # Strip out any classes in driver JAR found in core Metabase uberjar or parent JARs; recompress with higher compression ratio
 strip_and_compress() {
     # ok, first things first, strip out any classes also found in the core Metabase uberjar
-    lein strip-and-compress "$target_jar"
+    lein strip-and-compress `cygpath -d "$target_jar" `
 
     # next, remove any classes also found in any of the parent JARs
     for parent in $parents; do
         echo "Removing duplicate classes with $parent uberjar..."
-        lein strip-and-compress "$target_jar" "resources/modules/$parent.metabase-driver.jar"
+        lein strip-and-compress `cygpath -d "$target_jar" ` "resources/modules/$parent.metabase-driver.jar"
     done
 }
 
