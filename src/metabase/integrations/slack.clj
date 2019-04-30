@@ -35,12 +35,24 @@
         (log/warn (u/pprint-to-str 'red error))
         (throw (ex-info (:message error) error))))))
 
+(defn get-slack-proxy
+  "add slack proxy support"
+  []
+  (let [slack-proxy-host (config/config-str :mb-slack-proxy-host)
+        slack-proxy-port (config/config-int :mb-slack-proxy-port)]
+    (if (and slack-proxy-host slack-proxy-port)
+      {:proxy-host slack-proxy-host
+       :proxy-port slack-proxy-port}
+      {})))
+
 (defn- do-slack-request [request-fn params-key endpoint & {:keys [token], :as params, :or {token (slack-token)}}]
   (when token
-    (handle-response (request-fn (str slack-api-base-url "/" (name endpoint)) {params-key      (assoc params :token token)
-                                                                               :as             :stream
-                                                                               :conn-timeout   1000
-                                                                               :socket-timeout 1000}))))
+    (let [proxy (get-slack-proxy)]
+      (handle-response (request-fn (str slack-api-base-url "/" (name endpoint)) (merge {params-key      (assoc params :token token)
+                                                                                        :as             :stream
+                                                                                        :conn-timeout   1000
+                                                                                        :socket-timeout 1000}
+                                                                                       proxy))))))
 
 (def ^{:arglists '([endpoint & {:as params}]), :style/indent 1}
   GET
