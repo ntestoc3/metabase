@@ -21,7 +21,8 @@
             [stencil.core :as stencil]))
 
 (defn- base-href []
-  (str (.getPath (io/as-url (public-settings/site-url))) "/"))
+  (let [path (some-> (public-settings/site-url) io/as-url .getPath)]
+    (str path "/")))
 
 (defn- escape-script [s]
   ;; Escapes text to be included in an inline <script> tag, in particular the string '</script'

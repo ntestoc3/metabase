@@ -11,9 +11,9 @@
 
 (def ^:private can-connect-timeout-ms
   "Consider `can-connect?`/`can-connect-with-details?` to have failed after this many milliseconds.
-   By default, this is 5 seconds. You can configure this value by setting the env var `MB_DB_CONNECTION_TIMEOUT_MS`."
+   By default, this is 10 seconds. You can configure this value by setting the env var `MB_DB_CONNECTION_TIMEOUT_MS`."
   (or (config/config-int :mb-db-connection-timeout-ms)
-      5000))
+      10000))
 
 (defn can-connect-with-details?
   "Check whether we can connect to a database with `driver` and `details-map` and perform a basic query such as `SELECT

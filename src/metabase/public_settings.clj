@@ -9,10 +9,13 @@
              [setting :as setting :refer [defsetting]]]
             [metabase.public-settings.metastore :as metastore]
             [metabase.util
-             [i18n :refer [available-locales-with-names set-locale tru]]
+             [i18n :refer [available-locales-with-names set-locale tru trs]]
              [password :as password]]
-            [toucan.db :as db])
-  (:import [java.util TimeZone UUID]))
+            [toucan.db :as db]
+            [clojure.java.io :as io]
+            [clojure.tools.logging :as log])
+  (:import [java.util TimeZone UUID]
+           org.apache.commons.validator.routines.UrlValidator))
 
 (defsetting check-for-updates
   (tru "Identify when new versions of Metabase are available.")
@@ -42,14 +45,29 @@
                      (setting/set-string! :site-uuid value)
                      value))))
 
+(defn- normalize-site-url [^String s]
+  (let [;; remove trailing slashes
+        s (str/replace s #"/$" "")
+        ;; add protocol if missing
+        s (if (str/starts-with? s "http")
+            s
+            (str "http://" s))]
+    ;; check that the URL is valid
+    (assert (.isValid (UrlValidator/getInstance) s)
+      (str (tru "Invalid site URL: {0}" s)))
+    s))
+
 ;; This value is *guaranteed* to never have a trailing slash :D
 ;; It will also prepend `http://` to the URL if there's not protocol when it comes in
 (defsetting site-url
   (tru "The base URL of this Metabase instance, e.g. \"http://metabase.my-company.com\".")
+  :getter (fn []
+            (try
+              (some-> (setting/get-string :site-url) normalize-site-url)
+              (catch AssertionError e
+                (log/error e (trs "site-url is invalid; returning nil for now. Will be reset on next request.")))))
   :setter (fn [new-value]
-            (setting/set-string! :site-url (when new-value
-                                             (cond->> (str/replace new-value #"/$" "")
-                                               (not (str/starts-with? new-value "http")) (str "http://"))))))
+            (setting/set-string! :site-url (some-> new-value normalize-site-url))))
 
 (defsetting site-locale
   (str  (tru "The default language for this Metabase instance.")
