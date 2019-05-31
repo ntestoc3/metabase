@@ -8,6 +8,7 @@
             [metabase.query-processor.middleware
              [add-dimension-projections :as add-dim]
              [add-implicit-clauses :as implicit-clauses]
+             [add-implicit-joins :as add-implicit-joins]
              [add-row-count-and-status :as row-count-and-status]
              [add-settings :as add-settings]
              [annotate :as annotate]
@@ -38,7 +39,7 @@
              [resolve-database :as resolve-database]
              [resolve-driver :as resolve-driver]
              [resolve-fields :as resolve-fields]
-             [resolve-joined-tables :as resolve-joined-tables]
+             [resolve-joins :as resolve-joins]
              [resolve-source-table :as resolve-source-table]
              [results-metadata :as results-metadata]
              [splice-params-in-response :as splice-params-in-response]
@@ -46,7 +47,8 @@
              [validate :as validate]
              [wrap-value-literals :as wrap-value-literals]]
             [metabase.util.i18n :refer [tru]]
-            [schema.core :as s]))
+            [schema.core :as s])
+  (:import clojure.core.async.impl.channels.ManyToManyChannel))
 
 ;;; +----------------------------------------------------------------------------------------------------------------+
 ;;; |                                                QUERY PROCESSOR                                                 |
@@ -102,7 +104,9 @@
       annotate/add-column-info
       perms/check-query-permissions
       cumulative-ags/handle-cumulative-aggregations
-      resolve-joined-tables/resolve-joined-tables
+      ;; ▲▲▲ NO FK->s POINT ▲▲▲ Everything after this point will not see `:fk->` clauses, only `:joined-field`
+      resolve-joins/resolve-joins
+      add-implicit-joins/add-implicit-joins
       dev/check-results-format
       limit/limit
       results-metadata/record-and-return-metadata!
@@ -140,9 +144,12 @@
       ;; All middleware above this point is written in the synchronous 1-arg style. All middleware below is written in
       ;; async 4-arg style. Eventually the entire QP middleware stack will be rewritten in the async style. But not yet
       ;;
+      ;; TODO - `async-wait` should be moved way up the stack, at least after the DB is resolved, right now for nested
+      ;; queries it creates a thread pool for the nested query placeholder DB ID
+      ;;
       ;; ▼▼▼ ASYNC MIDDLEWARE ▼▼▼
       async/async->sync
-      async-wait/wait-for-permit
+      async-wait/wait-for-turn
       cache/maybe-return-cached-results
       validate/validate-query
       normalize/normalize
@@ -227,8 +234,17 @@
 
 (def ^:private default-pipeline (qp-pipeline execute-query))
 
-(defn process-query
-  "A pipeline of various QP functions (including middleware) that are used to process MB queries."
+(def ^:private QueryResponse
+  (s/named
+   (s/cond-pre
+    ManyToManyChannel
+    {:status (s/enum :completed :failed :canceled), s/Any s/Any})
+   "Valid query response (core.async channel or map with :status)"))
+
+(s/defn process-query :- QueryResponse
+  "Process an MBQL query. This is the main entrypoint to the magical realm of the Query Processor. Returns a
+  core.async channel if option `:async?` is true; otherwise returns results in the usual format. For async queries, if
+  the core.async channel is closed, the query will be canceled."
   {:style/indent 0}
   [query]
   (default-pipeline query))
